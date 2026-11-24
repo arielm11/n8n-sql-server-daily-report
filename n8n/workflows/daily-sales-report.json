@@ -1,0 +1,343 @@
+{
+  "name": "Daily Sales Report",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        32,
+        0
+      ],
+      "id": "892df2ca-9d93-4a4f-b86f-1e7c8ce0d6ec",
+      "name": "Run Manually"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        32,
+        128
+      ],
+      "id": "a2fbdffd-4c4c-4001-9a9d-ba0858d18afc",
+      "name": "Every Day 8 AM"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ef86ef61-b1f4-4fec-acdd-922d86c54c31",
+              "name": "reportDate",
+              "value": "={{ $now.minus({ days: 1 }).toFormat('yyyy-MM-dd') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        224,
+        64
+      ],
+      "id": "c20522da-85e8-46fa-a301-88d513b4f0e5",
+      "name": "Set Report Date"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "EXEC dbo.usp_GetDailySalesSummary @ReportDate = '{{ $json.reportDate }}'",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.microsoftSql",
+      "typeVersion": 1.2,
+      "position": [
+        432,
+        64
+      ],
+      "id": "3c01c6a4-242d-46b6-b1b7-6230e5ff14bb",
+      "name": "Get Summary",
+      "credentials": {
+        "microsoftSql": {
+          "id": "pCS5SXE4kLKOOhCJ",
+          "name": "Microsoft SQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "EXEC dbo.usp_GetTopProducts @ReportDate = '{{ $('Set Report Date').first().json.reportDate }}', @Top = 5",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.microsoftSql",
+      "typeVersion": 1.2,
+      "position": [
+        640,
+        64
+      ],
+      "id": "0f65ff00-e5f4-4e2e-8ffb-e07d627d308c",
+      "name": "Get Top Products",
+      "executeOnce": true,
+      "credentials": {
+        "microsoftSql": {
+          "id": "pCS5SXE4kLKOOhCJ",
+          "name": "Microsoft SQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "EXEC dbo.usp_GetDailyAlerts @ReportDate = '{{ $('Set Report Date').first().json.reportDate }}', @RevenueDropThresholdPercent = -30",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.microsoftSql",
+      "typeVersion": 1.2,
+      "position": [
+        864,
+        64
+      ],
+      "id": "fdff6255-98eb-4e6c-9419-1943f9b78dc7",
+      "name": "Get Alerts",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "microsoftSql": {
+          "id": "pCS5SXE4kLKOOhCJ",
+          "name": "Microsoft SQL account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "reports@demo.local",
+        "toEmail": "team@demo.local",
+        "subject": "={{ $json.subject }}",
+        "html": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1312,
+        192
+      ],
+      "id": "a8f68d7d-5761-4146-b086-47ee1a4a5c75",
+      "name": "Send Daily Report",
+      "webhookId": "43790cba-96ac-4259-bf48-60b3e2853071",
+      "credentials": {
+        "smtp": {
+          "id": "ESDwkauIjjuYyclM",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "b0abeb3c-6558-4e18-8a9e-3395baa0b831",
+              "leftValue": "={{ $json.hasAlerts }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        1536,
+        64
+      ],
+      "id": "900be5c3-eb2d-433f-bc04-109df70b786c",
+      "name": "Has Alerts?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const reportDate = $('Set Report Date').first().json.reportDate;\nconst summary = $('Get Summary').first().json;\nconst topProducts = $('Get Top Products').all().map(item => item.json).filter(p => p.Sku);\nconst alerts = $('Get Alerts').all().map(item => item.json).filter(a => a.AlertType);\n\nconst money = value =>\n  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value ?? 0));\n\nconst escapeHtml = value =>\n  String(value ?? '').replace(/[&<>\"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\n\nconst formatDate = isoDate =>\n  new Date(`${isoDate}T12:00:00Z`).toLocaleDateString('en-US', {\n    weekday: 'long', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'\n  });\n\nconst comparisonDate = new Date(`${reportDate}T12:00:00Z`);\ncomparisonDate.setUTCDate(comparisonDate.getUTCDate() - 7);\nconst comparisonIso = comparisonDate.toISOString().slice(0, 10);\n\nconst change = summary.RevenueChangePercent;\nconst hasChange = change !== null && change !== undefined;\nconst changeText = hasChange ? `${change > 0 ? '+' : ''}${Number(change).toFixed(1)}%` : 'n/a';\nconst changeColor = !hasChange ? '#667085' : change < 0 ? '#c0352b' : '#1f8a4c';\n\nconst cell = 'padding:10px 12px;border-bottom:1px solid #e4e7ec;';\n\nconst kpi = (label, value, color = '#1d2433') => `\n  <td style=\"padding:12px 16px;border:1px solid #e4e7ec;background:#ffffff;\">\n    <div style=\"font-size:12px;color:#667085;\">${label}</div>\n    <div style=\"font-size:20px;font-weight:600;color:${color};\">${value}</div>\n  </td>`;\n\nconst productRows = topProducts.length > 0\n  ? topProducts.map(p => `\n      <tr>\n        <td style=\"${cell}\">${escapeHtml(p.Name)}</td>\n        <td style=\"${cell}text-align:right;\">${p.UnitsSold}</td>\n        <td style=\"${cell}text-align:right;\">${money(p.Revenue)}</td>\n      </tr>`).join('')\n  : `<tr><td colspan=\"3\" style=\"${cell}\">No sales on this day.</td></tr>`;\n\nconst alertItems = alerts\n  .map(a => `<li style=\"margin-bottom:6px;\">${a.AlertType === 'RevenueDrop' ? '📉' : '📦'} ${escapeHtml(a.Detail)}</li>`)\n  .join('');\n\nconst alertsSection = alerts.length > 0 ? `\n  <div style=\"margin-top:24px;padding:12px 16px;background:#fdecea;border-radius:8px;color:#c0352b;\">\n    <strong>${alerts.length} item(s) need attention</strong>\n    <ul style=\"margin:8px 0 0;padding-left:20px;\">${alertItems}</ul>\n  </div>` : '';\n\nconst html = `\n<div style=\"font-family:Segoe UI,Roboto,Arial,sans-serif;max-width:640px;margin:0 auto;color:#1d2433;\">\n  <h2 style=\"margin:0 0 4px;\">Daily sales report</h2>\n  <div style=\"color:#667085;margin-bottom:20px;\">${formatDate(reportDate)}</div>\n\n  <table style=\"border-collapse:collapse;width:100%;\">\n    <tr>\n      ${kpi('Revenue', money(summary.Revenue))}\n      ${kpi('Orders', summary.OrdersCount)}\n      ${kpi('Average ticket', money(summary.AverageTicket))}\n    </tr>\n    <tr>\n      ${kpi('Online', money(summary.OnlineRevenue))}\n      ${kpi('Store', money(summary.StoreRevenue))}\n      ${kpi(`vs ${formatDate(comparisonIso)}`, changeText, changeColor)}\n    </tr>\n  </table>\n\n  <div style=\"font-size:13px;color:#667085;margin-top:8px;\">\n    Cancelled orders: ${summary.CancelledOrders}. Same weekday last week: ${money(summary.ComparisonRevenue)} from ${summary.ComparisonOrdersCount} orders.\n  </div>\n\n  ${alertsSection}\n\n  <h3 style=\"margin:24px 0 8px;\">Top products</h3>\n  <table style=\"border-collapse:collapse;width:100%;\">\n    <tr style=\"text-align:left;color:#667085;font-size:12px;\">\n      <th style=\"${cell}\">Product</th>\n      <th style=\"${cell}text-align:right;\">Units</th>\n      <th style=\"${cell}text-align:right;\">Revenue</th>\n    </tr>\n    ${productRows}\n  </table>\n</div>`;\n\nconst alertsHtml = `\n<div style=\"font-family:Segoe UI,Roboto,Arial,sans-serif;max-width:640px;margin:0 auto;color:#1d2433;\">\n  <h2 style=\"margin:0 0 4px;color:#c0352b;\">Sales alert</h2>\n  <div style=\"color:#667085;margin-bottom:16px;\">${formatDate(reportDate)}</div>\n  <ul style=\"padding-left:20px;\">${alertItems}</ul>\n</div>`;\n\nreturn [{\n  json: {\n    reportDate,\n    subject: `Daily sales report: ${reportDate} | ${money(summary.Revenue)} (${changeText})`,\n    html,\n    hasAlerts: alerts.length > 0,\n    alertSubject: `Sales alert: ${alerts.length} item(s) need attention on ${reportDate}`,\n    alertsHtml\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1088,
+        64
+      ],
+      "id": "47b3a041-eb08-44a7-b4ed-f8ddda54745f",
+      "name": "Build Report Email"
+    },
+    {
+      "parameters": {
+        "fromEmail": "reports@demo.local",
+        "toEmail": "team@demo.local",
+        "subject": "={{ $json.alertSubject }}",
+        "html": "={{ $json.alertsHtml }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1776,
+        -32
+      ],
+      "id": "020bd678-cc3a-4382-a67c-23702930492c",
+      "name": "Send an Email",
+      "webhookId": "24a6eb6a-98ab-4ceb-b6b4-9953cd7ada25",
+      "credentials": {
+        "smtp": {
+          "id": "ESDwkauIjjuYyclM",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Run Manually": {
+      "main": [
+        [
+          {
+            "node": "Set Report Date",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every Day 8 AM": {
+      "main": [
+        [
+          {
+            "node": "Set Report Date",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Report Date": {
+      "main": [
+        [
+          {
+            "node": "Get Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Summary": {
+      "main": [
+        [
+          {
+            "node": "Get Top Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Top Products": {
+      "main": [
+        [
+          {
+            "node": "Get Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Alerts": {
+      "main": [
+        [
+          {
+            "node": "Build Report Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Daily Report": {
+      "main": [
+        [
+          {
+            "node": "Has Alerts?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Report Email": {
+      "main": [
+        [
+          {
+            "node": "Send Daily Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Has Alerts?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Alerts?": {
+      "main": [
+        [
+          {
+            "node": "Send an Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "28c1d96b-357e-436c-9e05-3b2e9bec77e0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "89cb32381cc4a034bc46cb82c96408ab8cf0ee03d25abd779b5cff719136a410"
+  },
+  "nodeGroups": [],
+  "id": "AjoaJf7tCGbfMpfO",
+  "tags": []
+}
