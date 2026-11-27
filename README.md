@@ -6,7 +6,11 @@ It replaces the routine of someone opening the system every day, exporting data 
 
 ## Demo
 
-▶️ **Demo video:** _coming soon_
+▶️ **[Watch the demo on YouTube](https://youtu.be/F-N0HIanZDg)**
+
+<a href="https://youtu.be/F-N0HIanZDg">
+  <img src="https://img.youtube.com/vi/F-N0HIanZDg/maxresdefault.jpg" alt="Watch the demo" width="720">
+</a>
 
 ![Daily report email](docs/images/daily-report-email.png)
 
